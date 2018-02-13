@@ -21,6 +21,8 @@ namespace NLog.Mongo
     [Target("Mongo")]
     public class MongoTarget : Target
     {
+        private const string DefaultDatabaseName = "NLog";
+        private const string DefaultCollectionName = "Log";
         private static readonly ConcurrentDictionary<string, IMongoCollection<BsonDocument>> _collectionCache = new ConcurrentDictionary<string, IMongoCollection<BsonDocument>>();
 
         /// <summary>
@@ -55,7 +57,8 @@ namespace NLog.Mongo
         /// Gets or sets the connection string name string.
         /// </summary>
         /// <value>
-        /// The connection name string.
+        /// The connection name string. Database name from this string will be
+        /// used if present and the DatabaseName property is not set.
         /// </value>
         public string ConnectionString { get; set; }
 
@@ -72,7 +75,7 @@ namespace NLog.Mongo
         /// </summary>
         /// <value>
         /// The MongoClientSettings that will be used to connect. If this is set, it
-        /// will always be used over the ConnectionString
+        /// will always be used over the ConnectionString.
         /// </value>
         public MongoClientSettings ClientSettings { get; set; }
 
@@ -336,14 +339,12 @@ namespace NLog.Mongo
 
             return _collectionCache.GetOrAdd(key, k =>
             {
-                // create collection
                 var client = GetMongoClient();
 
-                // Database name overrides connection string
-                var databaseName = DatabaseName ?? "NLog";
+                var databaseName = GetDatabaseName();
                 var database = client.GetDatabase(databaseName);
 
-                string collectionName = CollectionName ?? "Log";
+                string collectionName = CollectionName ?? DefaultCollectionName;
                 if (!CappedCollectionSize.HasValue || CollectionExists(database, collectionName))
                     return database.GetCollection<BsonDocument>(collectionName);
 
@@ -362,14 +363,29 @@ namespace NLog.Mongo
         }
 
         private MongoClient GetMongoClient()
-        {
+        {   
             if (ClientSettings != null)
                 return new MongoClient(ClientSettings);
-            
+
             var mongoUrl = new MongoUrl(ConnectionString);
-            if (mongoUrl.DatabaseName != null)
-                DatabaseName = mongoUrl.DatabaseName;
             return new MongoClient(mongoUrl);
+        }
+
+        private string GetDatabaseName()
+        {
+            // Database name overrides connection string
+            if (!string.IsNullOrEmpty(DatabaseName))
+                return DatabaseName;
+
+            // Connection string overrides default
+            if (!string.IsNullOrEmpty(ConnectionString))
+            {
+                var mongoUrl = new MongoUrl(ConnectionString);
+                if (!string.IsNullOrEmpty(mongoUrl.DatabaseName))
+                    return mongoUrl.DatabaseName;
+            }
+
+            return DefaultDatabaseName;
         }
 
         private static string GetConnectionString(string connectionName)
