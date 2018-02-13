@@ -68,6 +68,15 @@ namespace NLog.Mongo
         public string ConnectionName { get; set; }
 
         /// <summary>
+        /// Gets or sets the MongoClientSettings
+        /// </summary>
+        /// <value>
+        /// The MongoClientSettings that will be used to connect. If this is set, it
+        /// will always be used over the ConnectionString
+        /// </value>
+        public MongoClientSettings ClientSettings { get; set; }
+
+        /// <summary>
         /// Gets or sets a value indicating whether to use the default document format.
         /// </summary>
         /// <value>
@@ -119,9 +128,8 @@ namespace NLog.Mongo
             if (!string.IsNullOrEmpty(ConnectionName))
                 ConnectionString = GetConnectionString(ConnectionName);
 
-            if (string.IsNullOrEmpty(ConnectionString))
-                throw new NLogConfigurationException("Can not resolve MongoDB ConnectionString. Please make sure the ConnectionString property is set.");
-
+            if (string.IsNullOrEmpty(ConnectionString) && ClientSettings == null)
+                throw new NLogConfigurationException("Can not resolve MongoDB client settings. Please make sure one of the ConnectionString or ClientSettings properties are set.");
         }
 
         /// <summary>
@@ -329,11 +337,10 @@ namespace NLog.Mongo
             return _collectionCache.GetOrAdd(key, k =>
             {
                 // create collection
-                var mongoUrl = new MongoUrl(ConnectionString);
-                var client = new MongoClient(mongoUrl);
+                var client = GetMongoClient();
 
                 // Database name overrides connection string
-                var databaseName = DatabaseName ?? mongoUrl.DatabaseName ?? "NLog";
+                var databaseName = DatabaseName ?? "NLog";
                 var database = client.GetDatabase(databaseName);
 
                 string collectionName = CollectionName ?? "Log";
@@ -354,6 +361,16 @@ namespace NLog.Mongo
             });
         }
 
+        private MongoClient GetMongoClient()
+        {
+            if (ClientSettings != null)
+                return new MongoClient(ClientSettings);
+            
+            var mongoUrl = new MongoUrl(ConnectionString);
+            if (mongoUrl.DatabaseName != null)
+                DatabaseName = mongoUrl.DatabaseName;
+            return new MongoClient(mongoUrl);
+        }
 
         private static string GetConnectionString(string connectionName)
         {
