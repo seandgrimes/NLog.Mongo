@@ -119,11 +119,43 @@ namespace NLog.Mongo
         /// </value>
         public long? CappedCollectionMaxItems { get; set; }
 
+        private MongoClient MongoClient
+        {
+            get
+            {
+                if (ClientSettings != null)
+                    return new MongoClient(ClientSettings);
+
+                var mongoUrl = new MongoUrl(ConnectionString);
+                return new MongoClient(mongoUrl);
+            }
+        }
+
+        private string DatabaseNameInUse
+        {
+            get
+            {
+                // Database name overrides connection string
+                if (!string.IsNullOrEmpty(DatabaseName))
+                    return DatabaseName;
+
+                // Connection string overrides default
+                if (!string.IsNullOrEmpty(ConnectionString))
+                {
+                    var mongoUrl = new MongoUrl(ConnectionString);
+                    if (!string.IsNullOrEmpty(mongoUrl.DatabaseName))
+                        return mongoUrl.DatabaseName;
+                }
+
+                return DefaultDatabaseName;
+            }
+        }
+
         /// <summary>
         /// Initializes the target. Can be used by inheriting classes
         /// to initialize logging.
         /// </summary>
-        /// <exception cref="NLog.NLogConfigurationException">Can not resolve MongoDB ConnectionString. Please make sure the ConnectionString property is set.</exception>
+        /// <exception cref="NLog.NLogConfigurationException">Can not resolve MongoDB client settings. Please make sure one of the ConnectionString or ClientSettings properties are set.</exception>
         protected override void InitializeTarget()
         {
             base.InitializeTarget();
@@ -339,10 +371,7 @@ namespace NLog.Mongo
 
             return _collectionCache.GetOrAdd(key, k =>
             {
-                var client = GetMongoClient();
-
-                var databaseName = GetDatabaseName();
-                var database = client.GetDatabase(databaseName);
+                var database = MongoClient.GetDatabase(DatabaseNameInUse);
 
                 string collectionName = CollectionName ?? DefaultCollectionName;
                 if (!CappedCollectionSize.HasValue || CollectionExists(database, collectionName))
@@ -360,32 +389,6 @@ namespace NLog.Mongo
 
                 return database.GetCollection<BsonDocument>(collectionName);
             });
-        }
-
-        private MongoClient GetMongoClient()
-        {   
-            if (ClientSettings != null)
-                return new MongoClient(ClientSettings);
-
-            var mongoUrl = new MongoUrl(ConnectionString);
-            return new MongoClient(mongoUrl);
-        }
-
-        private string GetDatabaseName()
-        {
-            // Database name overrides connection string
-            if (!string.IsNullOrEmpty(DatabaseName))
-                return DatabaseName;
-
-            // Connection string overrides default
-            if (!string.IsNullOrEmpty(ConnectionString))
-            {
-                var mongoUrl = new MongoUrl(ConnectionString);
-                if (!string.IsNullOrEmpty(mongoUrl.DatabaseName))
-                    return mongoUrl.DatabaseName;
-            }
-
-            return DefaultDatabaseName;
         }
 
         private static string GetConnectionString(string connectionName)
